@@ -1424,6 +1424,8 @@
     let pararListenerProblemas = null;
     let pararListenerEstoqueCentral = null;
     let pararListenerMateriaisVeiculos = null;
+    let listenersAtivos = [];
+
 
     function iniciarAtualizacoesEmSegundoPlano() {
       const f = fbFns();
@@ -3107,23 +3109,40 @@ appState.problems = appState.problemsBase.filter(p =>
 
     window.realizarLogin = realizarLogin;
 
-    window.sairSistema = async () => {
-      try {
-        if (window.Firebase01?.auth?.currentUser) {
-          await window.Firebase01.signOut(window.Firebase01.auth);  // ← linha corrigida
-        }
-      } catch (e) {
-        console.error("Firebase Logout:", e);
-      }
-      appState.authenticated = false;
-      appState.usuario = null;
-      appState.role = null;
-      appState.tecnico = "";
-      appState.veiculo = "";
-      appState.placa = "";
-      appState.km = 0;
-      render();
-    };
+window.sairSistema = async () => {
+  // 1. DESLIGA os listeners em segundo plano ANTES de deslogar
+  if (pararListenerSolicitacoes) pararListenerSolicitacoes();
+  if (pararListenerNotificacoes) pararListenerNotificacoes();
+  if (pararListenerProblemas) pararListenerProblemas();
+  if (pararListenerEstoqueCentral) pararListenerEstoqueCentral();
+  if (pararListenerMateriaisVeiculos) pararListenerMateriaisVeiculos();
+
+  // Zera as variáveis para poderem ser reassinadas no próximo login
+  pararListenerSolicitacoes = null;
+  pararListenerNotificacoes = null;
+  pararListenerProblemas = null;
+  pararListenerEstoqueCentral = null;
+  pararListenerMateriaisVeiculos = null;
+
+  // 2. Desloga do Firebase
+  try {
+    if (window.Firebase01?.auth?.currentUser) {
+      await window.Firebase01.signOut(window.Firebase01.auth);
+    }
+  } catch (e) {
+    console.error("Firebase Logout:", e);
+  }
+
+  // 3. Limpa o estado (mantido como estava)
+  appState.authenticated = false;
+  appState.usuario = null;
+  appState.role = null;
+  appState.tecnico = "";
+  appState.veiculo = "";
+  appState.placa = "";
+  appState.km = 0;
+  render();
+};
 
     // PERFIL / SAÍDA
     document.getElementById("btnSwitchProfile").addEventListener("click", () => {
@@ -8653,10 +8672,16 @@ window.marcarProblemaTratado = async (id) => {
 
         secondaryApp = initializeApp(window.Firebase01.config, `cadastroUsuario_${Date.now()}_${Math.random().toString(36).slice(2)}`);
         const secondaryAuth = getAuth(secondaryApp);
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, email, senha);
+        let cred = null;
+        try {
+          cred = await createUserWithEmailAndPassword(secondaryAuth, email, senha);
+        } catch (e) {
+          if (e.code !== "auth/email-already-in-use") throw e; 
+          
+        }
 
         await setDoc(perfilRef, {
-          uid: cred.user.uid,
+          uid: cred ? cred.user.uid : "",
           usuario,
           nome,
           perfil,
